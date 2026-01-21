@@ -399,11 +399,12 @@ class GodScanner:
 ║  {Colors.GREEN}[3]{Colors.END}  📝  Check Single IP                                         ║
 ║  {Colors.GREEN}[4]{Colors.END}  📁  Scan from File                                          ║
 ║  {Colors.GREEN}[5]{Colors.END}  🌐  Scan ALL Providers {Colors.RED}(takes long time){Colors.END}                   ║
+║  {Colors.GREEN}[6]{Colors.END}  🏢  Scan by ASN                                             ║
 ║                                                                    ║
-║  {Colors.YELLOW}[6]{Colors.END}  ⚙️   Settings                                               ║
-║  {Colors.YELLOW}[7]{Colors.END}  📊  View Results {Colors.CYAN}({found_count} found){Colors.END}                                 ║
-║  {Colors.YELLOW}[8]{Colors.END}  💾  Save Results                                            ║
-║  {Colors.YELLOW}[9]{Colors.END}  📋  Generate VLESS Configs                                  ║
+║  {Colors.YELLOW}[7]{Colors.END}  ⚙️   Settings                                               ║
+║  {Colors.YELLOW}[8]{Colors.END}  📊  View Results {Colors.CYAN}({found_count} found){Colors.END}                                 ║
+║  {Colors.YELLOW}[9]{Colors.END}  💾  Save Results                                            ║
+║  {Colors.YELLOW}[10]{Colors.END} 📋  Generate VLESS Configs                                  ║
 ║                                                                    ║
 ║  {Colors.RED}[0]{Colors.END}  ❌  Exit                                                     ║
 ║                                                                    ║
@@ -697,6 +698,239 @@ class GodScanner:
                 all_ips.extend([str(ip) for ip in network.hosts()])
             
             self.do_scan(all_ips, f"Scanning {provider['name']}")
+
+    def scan_by_asn(self):
+        """Scan by ASN number"""
+        clear_screen()
+        self.print_banner()
+        
+        print(f"\n{Colors.BOLD}═══ Scan by ASN ═══{Colors.END}\n")
+        print(f"{Colors.DIM}Enter ASN number to fetch IP ranges and scan{Colors.END}")
+        print(f"{Colors.DIM}Examples: AS13335 (Cloudflare), AS51167 (Contabo), AS24940 (Hetzner){Colors.END}\n")
+        
+        # Popular ASNs reference
+        print(f"{Colors.BOLD}Popular ASNs:{Colors.END}")
+        popular_asns = [
+            ("AS51167", "Contabo"),
+            ("AS24940", "Hetzner"),
+            ("AS16276", "OVH"),
+            ("AS14061", "DigitalOcean"),
+            ("AS20473", "Vultr"),
+            ("AS63949", "Linode"),
+            ("AS12876", "Scaleway"),
+            ("AS31898", "Oracle Cloud"),
+            ("AS15169", "Google Cloud"),
+            ("AS8075", "Microsoft Azure"),
+            ("AS16509", "Amazon AWS"),
+            ("AS13335", "Cloudflare (will be excluded)"),
+        ]
+        
+        for asn, name in popular_asns:
+            print(f"  {Colors.CYAN}{asn:<10}{Colors.END} - {name}")
+        
+        print()
+        asn_input = input(f"Enter ASN (e.g., AS51167 or 51167): ").strip().upper()
+        
+        if not asn_input:
+            return
+        
+        # Normalize ASN format
+        if not asn_input.startswith("AS"):
+            asn_input = "AS" + asn_input
+        
+        asn_number = asn_input.replace("AS", "")
+        
+        print(f"\n{Colors.CYAN}[*] Fetching IP ranges for {asn_input}...{Colors.END}")
+        
+        try:
+            # Method 1: Try bgp.he.net (Hurricane Electric)
+            import urllib.request
+            import urllib.error
+            import re
+            
+            ranges = []
+            
+            # Try multiple sources
+            sources = [
+                f"https://api.bgpview.io/asn/{asn_number}/prefixes",
+                f"https://stat.ripe.net/data/announced-prefixes/data.json?resource={asn_input}",
+            ]
+            
+            # Try BGPView API first
+            try:
+                print(f"{Colors.DIM}[*] Trying BGPView API...{Colors.END}")
+                req = urllib.request.Request(
+                    f"https://api.bgpview.io/asn/{asn_number}/prefixes",
+                    headers={"User-Agent": "Mozilla/5.0"}
+                )
+                with urllib.request.urlopen(req, timeout=15) as response:
+                    data = json.loads(response.read().decode())
+                    
+                    if data.get("status") == "ok" and data.get("data"):
+                        ipv4_prefixes = data["data"].get("ipv4_prefixes", [])
+                        for prefix in ipv4_prefixes:
+                            cidr = prefix.get("prefix")
+                            if cidr:
+                                ranges.append(cidr)
+                        
+                        print(f"{Colors.GREEN}[✓] Found {len(ranges)} IPv4 ranges from BGPView{Colors.END}")
+            except Exception as e:
+                print(f"{Colors.YELLOW}[!] BGPView failed: {e}{Colors.END}")
+            
+            # Try RIPE Stat if BGPView failed
+            if not ranges:
+                try:
+                    print(f"{Colors.DIM}[*] Trying RIPE Stat API...{Colors.END}")
+                    req = urllib.request.Request(
+                        f"https://stat.ripe.net/data/announced-prefixes/data.json?resource={asn_input}",
+                        headers={"User-Agent": "Mozilla/5.0"}
+                    )
+                    with urllib.request.urlopen(req, timeout=15) as response:
+                        data = json.loads(response.read().decode())
+                        
+                        prefixes = data.get("data", {}).get("prefixes", [])
+                        for prefix in prefixes:
+                            cidr = prefix.get("prefix")
+                            if cidr and ":" not in cidr:  # Skip IPv6
+                                ranges.append(cidr)
+                        
+                        print(f"{Colors.GREEN}[✓] Found {len(ranges)} IPv4 ranges from RIPE{Colors.END}")
+                except Exception as e:
+                    print(f"{Colors.YELLOW}[!] RIPE Stat failed: {e}{Colors.END}")
+            
+            if not ranges:
+                print(f"{Colors.RED}[!] Could not fetch IP ranges for {asn_input}{Colors.END}")
+                print(f"{Colors.DIM}Try entering CIDR ranges manually with option [2]{Colors.END}")
+                input(f"\n{Colors.DIM}Press Enter...{Colors.END}")
+                return
+            
+            # Remove duplicates and sort
+            ranges = sorted(list(set(ranges)))
+            
+            # Calculate total IPs
+            total_ips = 0
+            for cidr in ranges:
+                try:
+                    network = ipaddress.ip_network(cidr, strict=False)
+                    total_ips += network.num_addresses
+                except:
+                    pass
+            
+            print(f"\n{Colors.BOLD}═══ {asn_input} IP Ranges ═══{Colors.END}\n")
+            print(f"Total ranges: {len(ranges)}")
+            print(f"Total IPs: ~{total_ips:,}\n")
+            
+            # Show ranges
+            print(f"{Colors.BOLD}Ranges:{Colors.END}")
+            for i, cidr in enumerate(ranges[:20], 1):  # Show first 20
+                try:
+                    network = ipaddress.ip_network(cidr, strict=False)
+                    print(f"  {i:>2}. {cidr:<20} ({network.num_addresses:>10,} IPs)")
+                except:
+                    print(f"  {i:>2}. {cidr}")
+            
+            if len(ranges) > 20:
+                print(f"  ... and {len(ranges) - 20} more ranges")
+            
+            # Scan options
+            print(f"\n{Colors.BOLD}Scan Options:{Colors.END}")
+            print(f"  {Colors.GREEN}[A]{Colors.END}  Scan ALL ranges")
+            print(f"  {Colors.GREEN}[S]{Colors.END}  Select specific ranges")
+            print(f"  {Colors.GREEN}[L]{Colors.END}  Scan only /24 and smaller (faster)")
+            print(f"  {Colors.RED}[0]{Colors.END}  Cancel")
+            
+            choice = input(f"\nChoice: ").strip().upper()
+            
+            if choice == '0':
+                return
+            
+            elif choice == 'A':
+                # Scan all
+                all_ips = []
+                for cidr in ranges:
+                    try:
+                        network = ipaddress.ip_network(cidr, strict=False)
+                        all_ips.extend([str(ip) for ip in network.hosts()])
+                    except:
+                        pass
+                
+                if all_ips:
+                    self.do_scan(all_ips, f"Scanning {asn_input} - All ranges")
+            
+            elif choice == 'L':
+                # Scan only small ranges (/24 and smaller)
+                small_ranges = []
+                for cidr in ranges:
+                    try:
+                        network = ipaddress.ip_network(cidr, strict=False)
+                        if network.prefixlen >= 24:
+                            small_ranges.append(cidr)
+                    except:
+                        pass
+                
+                if not small_ranges:
+                    print(f"{Colors.YELLOW}[!] No /24 or smaller ranges found{Colors.END}")
+                    input(f"\n{Colors.DIM}Press Enter...{Colors.END}")
+                    return
+                
+                all_ips = []
+                for cidr in small_ranges:
+                    try:
+                        network = ipaddress.ip_network(cidr, strict=False)
+                        all_ips.extend([str(ip) for ip in network.hosts()])
+                    except:
+                        pass
+                
+                print(f"\n{Colors.CYAN}Scanning {len(small_ranges)} small ranges ({len(all_ips):,} IPs){Colors.END}")
+                self.do_scan(all_ips, f"Scanning {asn_input} - Small ranges only")
+            
+            elif choice == 'S':
+                # Select specific ranges
+                print(f"\n{Colors.DIM}Enter range numbers separated by comma (e.g., 1,3,5){Colors.END}")
+                print(f"{Colors.DIM}Or enter range (e.g., 1-10){Colors.END}")
+                
+                selection = input(f"Selection: ").strip()
+                
+                selected_indices = set()
+                for part in selection.split(','):
+                    part = part.strip()
+                    if '-' in part:
+                        try:
+                            start, end = part.split('-')
+                            for i in range(int(start), int(end) + 1):
+                                selected_indices.add(i)
+                        except:
+                            pass
+                    else:
+                        try:
+                            selected_indices.add(int(part))
+                        except:
+                            pass
+                
+                selected_ranges = []
+                for i in selected_indices:
+                    if 1 <= i <= len(ranges):
+                        selected_ranges.append(ranges[i - 1])
+                
+                if not selected_ranges:
+                    print(f"{Colors.RED}[!] No valid ranges selected{Colors.END}")
+                    input(f"\n{Colors.DIM}Press Enter...{Colors.END}")
+                    return
+                
+                all_ips = []
+                for cidr in selected_ranges:
+                    try:
+                        network = ipaddress.ip_network(cidr, strict=False)
+                        all_ips.extend([str(ip) for ip in network.hosts()])
+                    except:
+                        pass
+                
+                print(f"\n{Colors.CYAN}Scanning {len(selected_ranges)} ranges ({len(all_ips):,} IPs){Colors.END}")
+                self.do_scan(all_ips, f"Scanning {asn_input} - Selected ranges")
+        
+        except Exception as e:
+            print(f"{Colors.RED}[!] Error: {e}{Colors.END}")
+            input(f"\n{Colors.DIM}Press Enter...{Colors.END}")
 
     def show_settings(self):
         """Settings menu"""
@@ -1018,12 +1252,14 @@ class GodScanner:
             elif choice == '5':
                 self.scan_all_providers()
             elif choice == '6':
-                self.show_settings()
+                self.scan_by_asn()
             elif choice == '7':
-                self.show_results()
+                self.show_settings()
             elif choice == '8':
-                self.save_results()
+                self.show_results()
             elif choice == '9':
+                self.save_results()
+            elif choice == '10':
                 self.generate_vless()
 
 
