@@ -277,7 +277,11 @@ class Scanner:
 
     def check_ip(self, ip: str, sni: str = "") -> Optional[ScanResult]:
         """
-        Check single IP for CF proxy using specified SNI
+        Check if IP accepts TLS connection with specified SNI
+        
+        In blocked regions, we can't verify CF headers.
+        We just check if the IP:443 accepts TLS handshake with our SNI.
+        If it does - it's a potential proxy to test later with VPN.
         
         Args:
             ip: IP address to check
@@ -303,26 +307,14 @@ class Scanner:
             with socket.create_connection((ip, self.port), timeout=self.timeout) as sock:
                 sock.settimeout(self.timeout)
                 with ctx.wrap_socket(sock, server_hostname=sni) as ssock:
+                    # TLS handshake successful!
                     cert = ssock.getpeercert()
                     
-                    is_cf_cert = False
                     if cert:
                         subject = dict(x[0] for x in cert.get('subject', []))
                         result.cert_cn = subject.get('commonName', '')
-                        
-                        issuer = dict(x[0] for x in cert.get('issuer', []))
-                        issuer_cn = issuer.get('commonName', '').lower()
-                        issuer_o = issuer.get('organizationName', '').lower()
-                        
-                        # Check issuer for CF indicators
-                        cf_issuers = ['cloudflare', 'google trust']
-                        is_cf_cert = any(ci in issuer_cn or ci in issuer_o for ci in cf_issuers)
-                        
-                        if result.cert_cn and 'cloudflare' in result.cert_cn.lower():
-                            is_cf_cert = True
                     
-                    # Try HTTP request
-                    is_cf = False
+                    # Try to get HTTP response (may fail in blocked regions)
                     try:
                         conn = http.client.HTTPSConnection(ip, self.port, timeout=self.timeout, context=ctx)
                         conn.request("HEAD", "/", headers={
@@ -337,26 +329,14 @@ class Scanner:
                         result.cf_ray = headers.get('cf-ray')
                         result.server = headers.get('server', '')
                         conn.close()
-                        
-                        # Check CF indicators
-                        if result.cf_ray:
-                            is_cf = True
-                        elif result.server and 'cloudflare' in result.server.lower():
-                            is_cf = True
-                        elif any(h in headers for h in ['cf-ray', 'cf-cache-status']):
-                            is_cf = True
-                        elif is_cf_cert:
-                            is_cf = True
-                            
                     except Exception:
-                        # HTTP failed but TLS worked with CF cert
-                        if is_cf_cert:
-                            is_cf = True
+                        # HTTP failed but TLS worked - still good!
+                        pass
                     
-                    if is_cf:
-                        result.is_cf_proxy = True
-                        result.response_time_ms = int((time.time() - start_time) * 1000)
-                        return result
+                    # TLS handshake worked = potential proxy
+                    result.is_cf_proxy = True
+                    result.response_time_ms = int((time.time() - start_time) * 1000)
+                    return result
                         
         except (socket.timeout, ConnectionRefusedError, ssl.SSLError, OSError):
             pass
@@ -516,8 +496,9 @@ class GodScanner:
 """)
 
     def on_found(self, result: ScanResult):
-        """Callback when CF proxy found"""
-        print(f"\r{Colors.GREEN}[+] FOUND: {result.ip}:{result.port}{Colors.END} | CF-RAY: {result.cf_ray} | {result.response_time_ms}ms")
+        """Callback when potential proxy found"""
+        cf_ray = f" | CF-RAY: {result.cf_ray}" if result.cf_ray else ""
+        print(f"\r{Colors.GREEN}[+] FOUND: {result.ip}:{result.port}{Colors.END} | {result.response_time_ms}ms{cf_ray}")
 
     def do_scan(self, ips: List[str], description: str):
         """Execute scan with progress display"""
@@ -619,9 +600,13 @@ class GodScanner:
         else:
             print(f"{Colors.GREEN}[✓] Scan completed in {elapsed:.1f}s{Colors.END}")
         print(f"{Colors.GREEN}[✓] Scanned: {self.scanner.scanned:,} IPs ({self.scanner.scanned/elapsed:.0f}/s){Colors.END}")
-        print(f"{Colors.GREEN}[✓] Found CF proxies: {self.scanner.found}{Colors.END}")
+        print(f"{Colors.GREEN}[✓] Found potential proxies: {self.scanner.found}{Colors.END}")
         print(f"{Colors.GREEN}[✓] Total results: {len(self.results)}{Colors.END}")
         print(f"{Colors.GREEN}{'═'*60}{Colors.END}")
+        
+        if self.scanner.found > 0:
+            print(f"\n{Colors.CYAN}These IPs accepted TLS with your SNI.{Colors.END}")
+            print(f"{Colors.DIM}Test them with your VLESS client to verify they work.{Colors.END}")
         
         try:
             input(f"\n{Colors.DIM}Press Enter to continue...{Colors.END}")
@@ -738,22 +723,24 @@ class GodScanner:
             return
         
         print(f"{Colors.GREEN}[✓] Not official CloudFlare IP{Colors.END}")
-        print(f"{Colors.DIM}[*] Testing connection with SNI: {self.settings['sni']}...{Colors.END}\n")
+        print(f"{Colors.DIM}[*] Testing TLS connection with SNI: {self.settings['sni']}...{Colors.END}\n")
         
         scanner = Scanner(threads=1, timeout=self.settings['timeout'], port=self.settings['port'])
         result = scanner.check_ip(ip, self.settings['sni'])
         
         if result and result.is_cf_proxy:
             print(f"{Colors.GREEN}{'═'*50}{Colors.END}")
-            print(f"{Colors.GREEN}[✓] CF PROXY DETECTED!{Colors.END}")
+            print(f"{Colors.GREEN}[✓] POTENTIAL PROXY FOUND!{Colors.END}")
             print(f"{Colors.GREEN}{'═'*50}{Colors.END}")
             print(f"  IP:        {result.ip}")
             print(f"  Port:      {result.port}")
-            print(f"  CF-RAY:    {result.cf_ray or 'N/A'}")
-            print(f"  Server:    {result.server or 'N/A'}")
-            print(f"  Cert CN:   {result.cert_cn or 'N/A'}")
             print(f"  Latency:   {result.response_time_ms}ms")
+            print(f"  Cert CN:   {result.cert_cn or 'N/A'}")
+            print(f"  CF-RAY:    {result.cf_ray or 'N/A (blocked region?)'}")
+            print(f"  Server:    {result.server or 'N/A'}")
             print(f"{Colors.GREEN}{'═'*50}{Colors.END}")
+            print(f"\n{Colors.CYAN}TLS handshake successful with your SNI!{Colors.END}")
+            print(f"{Colors.DIM}This IP accepts connections - test it with your VLESS client.{Colors.END}")
             
             save = input(f"\nAdd to results? [Y/n]: ").strip().lower()
             if save != 'n':
@@ -761,10 +748,10 @@ class GodScanner:
                 print(f"{Colors.GREEN}[✓] Added to results{Colors.END}")
         else:
             print(f"{Colors.RED}{'═'*50}{Colors.END}")
-            print(f"{Colors.RED}[✗] Not a CF proxy{Colors.END}")
+            print(f"{Colors.RED}[✗] Connection failed{Colors.END}")
             print(f"{Colors.RED}{'═'*50}{Colors.END}")
-            print(f"{Colors.DIM}This IP does not proxy traffic through CloudFlare{Colors.END}")
-            print(f"{Colors.DIM}with SNI: {self.settings['sni']}{Colors.END}")
+            print(f"{Colors.DIM}Could not establish TLS connection with SNI: {self.settings['sni']}{Colors.END}")
+            print(f"{Colors.DIM}The IP may not be a proxy or port 443 is closed.{Colors.END}")
         
         input(f"\n{Colors.DIM}Press Enter...{Colors.END}")
 
@@ -1102,17 +1089,41 @@ class GodScanner:
                 return
             elif choice == '1':
                 print(f"\n{Colors.BOLD}SNI Domain{Colors.END}")
-                print(f"{Colors.DIM}Enter your CloudFlare-backed domain for scanning{Colors.END}")
-                print(f"{Colors.DIM}This domain will be used as SNI when connecting to IPs{Colors.END}")
-                print(f"{Colors.DIM}Example: yourdomain.com, sub.yourdomain.com{Colors.END}\n")
+                print(f"{Colors.DIM}Enter a CloudFlare-backed domain for scanning.{Colors.END}")
+                print(f"{Colors.DIM}This domain is used as SNI when connecting to IPs.{Colors.END}")
+                print(f"\n{Colors.YELLOW}If your domain is blocked, use a popular unblocked CF domain:{Colors.END}")
                 
-                val = input("SNI Domain (or 'clear' to remove): ").strip().lower()
+                # Popular CF domains that are usually not blocked
+                popular_snis = [
+                    "speed.cloudflare.com",
+                    "www.visa.com",
+                    "www.mastercard.com", 
+                    "www.who.int",
+                    "www.unicef.org",
+                    "www.spotify.com",
+                    "www.udemy.com",
+                    "www.canva.com",
+                    "www.medium.com",
+                    "www.notion.so",
+                ]
+                
+                print(f"\n{Colors.CYAN}Popular CF domains (try these if yours is blocked):{Colors.END}")
+                for i, domain in enumerate(popular_snis, 1):
+                    print(f"  {i:>2}. {domain}")
+                
+                print(f"\n{Colors.DIM}Enter domain name, number (1-{len(popular_snis)}), or 'clear' to remove{Colors.END}")
+                
+                val = input(f"\nSNI Domain: ").strip()
+                
                 if val == 'clear' or val == '':
                     self.settings['sni'] = ''
                     print(f"{Colors.YELLOW}[✓] SNI cleared{Colors.END}")
+                elif val.isdigit() and 1 <= int(val) <= len(popular_snis):
+                    self.settings['sni'] = popular_snis[int(val) - 1]
+                    print(f"{Colors.GREEN}[✓] SNI set to: {self.settings['sni']}{Colors.END}")
                 else:
                     # Remove protocol if present
-                    val = val.replace('https://', '').replace('http://', '').split('/')[0]
+                    val = val.lower().replace('https://', '').replace('http://', '').split('/')[0]
                     self.settings['sni'] = val
                     print(f"{Colors.GREEN}[✓] SNI set to: {val}{Colors.END}")
                 input(f"{Colors.DIM}Press Enter...{Colors.END}")
