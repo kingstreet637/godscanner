@@ -30,9 +30,10 @@ When someone sets up a VLESS Reality server with SNI pointing to a CloudFlare-ba
 - 🔍 **Interactive TUI Menu** - Easy to use interface
 - ⚡ **Multi-threaded Scanning** - Up to 1000 concurrent threads
 - 🌐 **Built-in VPS Providers** - Contabo, Hetzner, OVH, DigitalOcean, Vultr, Linode, and more
+- 🏢 **ASN Scanning** - Scan any ASN by number (fetches ranges automatically)
 - 📊 **Real-time Progress** - See results as they come
 - 💾 **Export Results** - JSON, CSV, or plain text
-- 📋 **VLESS Config Generator** - Generate ready-to-use configs
+- 📋 **VLESS Config Generator** - Generate ready-to-use configs with 0-RTT and Fragment support
 
 ## 📦 Installation
 
@@ -76,11 +77,12 @@ This opens the interactive menu:
 ║  [3]  📝  Check Single IP                                          ║
 ║  [4]  📁  Scan from File                                           ║
 ║  [5]  🌐  Scan ALL Providers                                       ║
+║  [6]  🏢  Scan by ASN                                              ║
 ║                                                                    ║
-║  [6]  ⚙️   Settings                                                 ║
-║  [7]  📊  View Results                                             ║
-║  [8]  💾  Save Results                                             ║
-║  [9]  📋  Generate VLESS Configs                                   ║
+║  [7]  ⚙️   Settings                                                 ║
+║  [8]  📊  View Results                                             ║
+║  [9]  💾  Save Results                                             ║
+║  [10] 📋  Generate VLESS Configs                                   ║
 ║                                                                    ║
 ║  [0]  ❌  Exit                                                      ║
 ╚════════════════════════════════════════════════════════════════════╝
@@ -95,10 +97,42 @@ This opens the interactive menu:
 | **[3] Check Single IP** | Test one specific IP address |
 | **[4] Scan from File** | Load IPs from a text file (one per line) |
 | **[5] Scan ALL** | Scan all known VPS provider ranges (takes long!) |
-| **[6] Settings** | Configure threads, timeout, port |
-| **[7] View Results** | Display found CF proxies |
-| **[8] Save Results** | Export to JSON/CSV/TXT |
-| **[9] VLESS Configs** | Generate VLESS connection strings |
+| **[6] Scan by ASN** | Enter ASN number, auto-fetches IP ranges |
+| **[7] Settings** | Configure threads, timeout, port |
+| **[8] View Results** | Display found CF proxies |
+| **[9] Save Results** | Export to JSON/CSV/TXT |
+| **[10] VLESS Configs** | Generate VLESS connection strings |
+
+## 🏢 ASN Scanning
+
+Scan any Autonomous System by number. GodScanner automatically fetches IP ranges from BGPView/RIPE.
+
+```
+═══ Scan by ASN ═══
+
+Popular ASNs:
+  AS51167    - Contabo
+  AS24940    - Hetzner
+  AS16276    - OVH
+  AS14061    - DigitalOcean
+  AS20473    - Vultr
+  AS63949    - Linode
+  AS12876    - Scaleway
+  AS31898    - Oracle Cloud
+  AS15169    - Google Cloud
+  AS8075     - Microsoft Azure
+  AS16509    - Amazon AWS
+
+Enter ASN (e.g., AS51167 or 51167): 51167
+
+[*] Fetching IP ranges for AS51167...
+[✓] Found 47 IPv4 ranges from BGPView
+
+Scan Options:
+  [A]  Scan ALL ranges
+  [S]  Select specific ranges
+  [L]  Scan only /24 and smaller (faster)
+```
 
 ## 🏢 Supported Providers
 
@@ -115,6 +149,51 @@ This opens the interactive menu:
 | Google Cloud | 34.64.x.x, 35.184.x.x |
 | Azure | 13.64.x.x, 20.x.x.x, 40.64.x.x |
 | AWS Lightsail | 3.8.x.x, 18.130.x.x, 52.x.x.x |
+
+## 📋 VLESS Config Generator
+
+Generate ready-to-use VLESS configs with advanced options:
+
+```
+═══ Generate VLESS Configs ═══
+
+[1/6] UUID
+  UUID: your-uuid-here
+
+[2/6] Host Header
+  Host: your-domain.com
+
+[3/6] SNI (Server Name Indication)
+  SNI: your-domain.com
+
+[4/6] WebSocket Path
+  Path: /vless
+
+[5/6] 0-RTT Early Data
+  Add 0-RTT (?ed=2048)? [Y/n]: y
+  Path with 0-RTT: /vless?ed=2048
+
+[6/6] TLS Fragment
+  Add fragment? [y/N]: y
+  Fragment value: 1-3,1-1,tlshello
+```
+
+### Generated Config Example
+
+```
+vless://uuid@144.91.121.101:443?encryption=none&type=ws&host=domain.com&path=%2Fvless%3Fed%3D2048&security=tls&fp=chrome&sni=domain.com&allowInsecure=false&fragment=1-3,1-1,tlshello#GodScanner-1-45ms
+```
+
+### Config Options
+
+| Option | Description |
+|--------|-------------|
+| **UUID** | Your VLESS server UUID |
+| **Host** | Domain for Host header |
+| **SNI** | TLS Server Name Indication |
+| **Path** | WebSocket path on your server |
+| **0-RTT** | Early data for lower latency (`?ed=2048`) |
+| **Fragment** | TLS fragmentation to bypass DPI |
 
 ## ⚙️ Settings
 
@@ -141,9 +220,17 @@ This opens the interactive menu:
 ]
 ```
 
-### VLESS Config
+### Text (IP List)
 ```
-vless://UUID@144.91.121.101:443?security=tls&type=ws&path=/&host=YOUR-DOMAIN.com&sni=YOUR-DOMAIN.com#GodScanner-1-45ms
+144.91.121.101
+167.86.85.42
+95.216.45.123
+```
+
+### CSV
+```csv
+ip,port,cf_ray,server,latency_ms,cert_cn
+144.91.121.101,443,9c1390647c985d97-FRA,cloudflare,45,www.cloudflare.com
 ```
 
 ## 🔒 Official CloudFlare IPs (Excluded)
@@ -169,8 +256,8 @@ GodScanner automatically excludes official CloudFlare IP ranges:
 ## 🤔 How to Use Found IPs
 
 1. **Run GodScanner** and find CF proxy IPs
-2. **Generate VLESS config** with your domain
-3. **Import** into your client (v2rayN, Shadowrocket, v2rayNG, etc.)
+2. **Generate VLESS config** with your domain and settings
+3. **Import** into your client (v2rayN, Shadowrocket, v2rayNG, Nekobox, etc.)
 
 ### Example VLESS Config
 ```
@@ -178,18 +265,22 @@ Address: 144.91.121.101 (found IP)
 Port: 443
 UUID: your-uuid
 Network: ws
-Path: /your-path
+Path: /your-path?ed=2048
 TLS: enabled
 SNI: your-domain.com
 Host: your-domain.com
+Fragment: 1-3,1-1,tlshello (optional)
 ```
 
 ## 📝 Tips
 
 - **Start small**: Test with `/24` ranges before scanning larger ranges
+- **Use ASN scan**: Faster than scanning all provider ranges
 - **Increase threads** for faster scanning (if your connection allows)
 - **Lower timeout** (2-3s) for faster but less reliable scans
 - **Check single IP** first to verify your setup works
+- **Use 0-RTT**: Reduces latency on connections
+- **Use Fragment**: Helps bypass DPI in restricted networks
 
 ## ⚠️ Disclaimer
 
@@ -206,6 +297,7 @@ Contributions are welcome! Feel free to:
 - Report bugs
 - Suggest new features
 - Add new VPS provider ranges
+- Add new ASN references
 - Submit pull requests
 
 ## ⭐ Star History
